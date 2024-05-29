@@ -90,7 +90,7 @@ display(xsum_sample.to_pandas())
 
 import pandas as pd
 batch_classification_results = pipe(xsum_sample["document"], num_beams=10)
-
+print(type(batch_classification_results))
 joined_data = pd.DataFrame.from_dict(batch_classification_results)\
     .rename({"summary_test": "model_summary"}, axis=1)\
     .join(pd.DataFrame.from_dict(xsum_sample))
@@ -132,6 +132,11 @@ signature = infer_signature(data, output)
 
 # COMMAND ----------
 
+print(signature)
+print(type(signature))
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ### Create an Experiment and Log our Model
 # MAGIC Great! Now that we have our model signature, we want create an experiment and log our model. Typically, we log models after finetuning or packaging with other artifacts (more on that later). But for now, we're just going to do a simple `log_model()`run to explore MLflow's functionality 
@@ -140,8 +145,14 @@ signature = infer_signature(data, output)
 
 # COMMAND ----------
 
+import datetime
+ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+print(ts)
+
+# COMMAND ----------
+
 #Create a new mlflow experiment or get the existing one if already exists.
-experiment_name = f"/Users/{current_user}/genai-intro-workshop"
+experiment_name = f"/Users/{current_user}/genai-intro-workshop-{ts}"
 mlflow.set_experiment(experiment_name)
 
 #set the name of our model
@@ -154,9 +165,24 @@ with mlflow.start_run(experiment_id=experiment_id):
 
 # COMMAND ----------
 
+# MAGIC %fs ls /Users/nishant.deshpande@databricks.com/genai-intro-workshop-20240409_184125
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ### Register our Model to Unity Catalog
 # MAGIC Now that we've logged our model, we can register it to Unity Catalog. Typically, we would probably do some additional model comparisons or testing before registering, but we will do so here to demonstrate some functionality
+
+# COMMAND ----------
+
+import pandas as pd
+#pd.set_option('display.max_colwidth', None)
+#pd.set_option("max_columns", 50)
+pd.set_option('display.max_columns', 100)
+# Display up to 100 rows in DataFrame
+pd.set_option('display.max_rows', 100)
+# Set the maximum width of each column
+pd.set_option('display.max_colwidth', 20)
 
 # COMMAND ----------
 
@@ -164,6 +190,12 @@ import mlflow
 
 #grab our most recent run (which logged the model) using our experiment ID
 runs = mlflow.search_runs([experiment_id])
+display(runs)
+#type(runs)
+
+# COMMAND ----------
+
+
 last_run_id = runs.sort_values('start_time', ascending=False).iloc[0].run_id
 
 #grab the model URI that's generated from the run

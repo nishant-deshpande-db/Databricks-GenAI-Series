@@ -12,7 +12,9 @@ dbutils.library.restartPython()
 # COMMAND ----------
 
 current_user = spark.sql("SELECT current_user() as username").collect()[0].username
+print(current_user)
 schema_name = f'genai_workshop_{current_user.split("@")[0].split(".")[0]}'
+print(schema_name)
 
 # COMMAND ----------
 
@@ -53,12 +55,43 @@ from langchain.chat_models import ChatDatabricks
 
 #call llama2 70B, hosted by Databricks
 llama_model = ChatDatabricks(endpoint="databricks-llama-2-70b-chat", max_tokens = 400)
+llama_model_t2 = ChatDatabricks(endpoint="databricks-llama-2-70b-chat", max_tokens = 400, temperature=0.4)
+
+# COMMAND ----------
+
+help(llama_model)
 
 # COMMAND ----------
 
 # DBTITLE 1,Start with a Simple Question about Spark Joins
 user_question = "How can I speed up my Spark join operation?"
 llama_model.predict(user_question)
+
+# COMMAND ----------
+
+from langchain_core.messages.base import BaseMessage
+
+bm1:BaseMessage = BaseMessage(content=user_question, type="ai")
+#bm2:BaseMessage = BaseMessage(text=user_question, sender="user")
+print(bm1)
+#print(bm2)
+
+# COMMAND ----------
+
+resp1 = llama_model.invoke(user_question)
+print(type(resp1))
+print(resp1)
+
+# COMMAND ----------
+
+resp1_js = resp1.to_json()
+print(resp1_js.keys())
+for (k,v) in resp1_js.items():
+  print(f"{k}: {v}")
+
+# COMMAND ----------
+
+llama_model.generate(messages=[[bm1,]])
 
 # COMMAND ----------
 
@@ -83,12 +116,21 @@ prompt_template = PromptTemplate(
 llama_chain = LLMChain(
     llm=llama_model,
     prompt=prompt_template,
-    output_key="Support Response",
+    output_key="Response",
     verbose=False
 )
 
 llama_chain_response = llama_chain.run({"question":user_question})
 print(llama_chain_response)
+
+# COMMAND ----------
+
+_r = llama_chain.invoke({"question":user_question})
+print(type(_r))
+
+# COMMAND ----------
+
+for (k,v) in _r.items(): print(f"{k}: {v}")
 
 # COMMAND ----------
 
@@ -133,7 +175,8 @@ zero_shot_template = """For each tweet, describe its sentiment:
                         [Tweet]: {input_string}
                       """
 
-few_shot_template = """For each tweet, describe its sentiment:
+few_shot_template = """For each tweet, describe its sentiment as below.
+Only add the sentiment. Do not say anything else.
                         [Tweet]: "I hate it when my phone battery dies."
                         [Sentiment]: Negative
                         ###
@@ -171,12 +214,12 @@ apples = """
 "Imagine you are at a grocery store and need to buy apples. They are sold in bags of 6 apples each and cost $2 per bag. If you need 20 apples for a recipe, how many bags should you buy and how much will it cost?
 """
 
-llama_model.predict(apples)
+print(llama_model.predict(apples))
 
 # COMMAND ----------
 
 chain_of_reasoning_prompt = """
-                            For the following question, answer the question, but walk through your line of reasining step by step to arrive at the answer:
+                            For the following question, answer the question, but walk through your line of reasining step by step to arrive at the answer. After you give the answer, don't say anything else. Don't be chatty in any way.
 
                             {input_string}
                             """
@@ -207,6 +250,32 @@ llama_model.predict(liquid_cluster)
 
 # COMMAND ----------
 
+llama_model.predict()
+
+# COMMAND ----------
+
+run_llm_chain(liquid_cluster, no_hallucinations_prompt, llama_model)
+
+# COMMAND ----------
+
+
+
+# COMMAND ----------
+
+no_hallucinations_prompt2 = """
+                            For the following question, only respond if you have sufficient information to generate a confident answer. If you cannot do so, then simply respond 'Sorry - I don't have enough information to answer that.'
+                            Also output your confidence score at the end like this: confidence_score: <confidence_score>
+
+                            Question:
+                            {input_string}
+                            """
+
+# COMMAND ----------
+
+run_llm_chain(liquid_cluster, no_hallucinations_prompt2, llama_model)
+
+# COMMAND ----------
+
 run_llm_chain(liquid_cluster, no_hallucinations_prompt, llama_model)
 
 # COMMAND ----------
@@ -220,31 +289,65 @@ run_llm_chain(liquid_cluster, no_hallucinations_prompt, llama_model)
 #when crafting your prompt, remember that you need to add a variable injection (commonly with {}) to the template. See examples above.
 #once you have the prompt + variable, add the variable build your PromptTemplate in cell 25 below
 your_prompt_template_here = """
+You are a code generator. Generate SQL to answer the given query. Generate only the SQL and nothing else. Guess at appropriate table and column names. Your response should be valid SQL. I.e. Comments should be prefixed by '--' as usual in SQL.
+
+Query: {query}
                             """
 
 # COMMAND ----------
 
-your_question_here = """
+your_question_here = """I want a query to give me the compensation of my top 10 compensated employees over the last 1 year.
                      """
 
 # COMMAND ----------
 
-llama_model.predict(your_question_here)
+print(llama_model.predict(your_question_here))
 
 # COMMAND ----------
 
 #build your own PromptTemplate + LLM chain
 your_prompt_template = PromptTemplate(
-    #TODO
+    input_variables=["query"],
+    template=your_prompt_template_here
   )
 
-your_model_chain = LLMChain(
-  #TODO
+model_chain1 = LLMChain(
+    llm=llama_model,
+    prompt=your_prompt_template,
+    #output_key="Response",
+    verbose=True,
+    return_final_only=False,  
+)
+
+model_chain2 = LLMChain(
+    llm=llama_model,
+    prompt=your_prompt_template,
+    output_key="Response",
+    verbose=False,
+    return_final_only=True,  
 )
 
 # COMMAND ----------
 
-model_chain.run() #TODO: what do we need to pass into run()?
+_r = your_model_chain.run({"query":your_question_here}) #TODO: what do we need to pass into run()?
+# return model_chain.run({"input_string": input_string})
+
+# COMMAND ----------
+
+print(_r)
+
+# COMMAND ----------
+
+
+
+# COMMAND ----------
+
+_r = model_chain2.run({"query":your_question_here}) #TODO: what do we need to pass into run()?
+
+
+# COMMAND ----------
+
+print(_r)
 
 # COMMAND ----------
 
@@ -262,6 +365,7 @@ input_columns = [
     {"type": "string", "name": input_key} for input_key in llama_chain.input_keys
 ]
 signature = infer_signature(input_columns, prediction)
+print(signature)
 
 # COMMAND ----------
 
@@ -295,10 +399,24 @@ with mlflow.start_run(experiment_id=experiment_id):
 
 # COMMAND ----------
 
-import mlflow
+import pandas as pd
+#pd.set_option('display.max_colwidth', None)
+#pd.set_option("max_columns", 50)
+pd.set_option('display.max_columns', 100)
+# Display up to 100 rows in DataFrame
+pd.set_option('display.max_rows', 100)
+# Set the maximum width of each column
+pd.set_option('display.max_colwidth', 20)
+
+# COMMAND ----------
+
+runs = mlflow.search_runs([experiment_id])
+display(runs)
+
+# COMMAND ----------
+
 
 #grab our most recent run (which logged the model) using our experiment ID
-runs = mlflow.search_runs([experiment_id])
 last_run_id = runs.sort_values('start_time', ascending=False).iloc[0].run_id
 
 #grab the model URI that's generated from the run

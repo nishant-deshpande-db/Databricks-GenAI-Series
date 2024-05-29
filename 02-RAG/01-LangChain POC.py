@@ -35,6 +35,10 @@
 
 # COMMAND ----------
 
+# MAGIC %run ./util
+
+# COMMAND ----------
+
 # MAGIC %md-sandbox
 # MAGIC ## Section 1: Crafting and Integrating a Knowledge Base into Chroma
 # MAGIC
@@ -68,6 +72,14 @@ setup_datasets(dataset_type=DatasetType.DATABRICKS, reset=False)
 # COMMAND ----------
 
 display(spark.table(f"{catalog_name}.{schema_name}.databricks_documentation_raw").limit(5))
+
+# COMMAND ----------
+
+display(spark.sql(f"desc detail {catalog_name}.{schema_name}.databricks_documentation_raw"))
+
+# COMMAND ----------
+
+display(spark.sql(f"select count(1) from {catalog_name}.{schema_name}.databricks_documentation_raw"))
 
 # COMMAND ----------
 
@@ -106,7 +118,7 @@ tokenizer = AutoTokenizer.from_pretrained(EMBEDDING_TOKENIZER_MODEL)
 text_splitter = RecursiveCharacterTextSplitter.from_huggingface_tokenizer(tokenizer, chunk_size=max_chunk_size, chunk_overlap=50)
 html_splitter = HTMLHeaderTextSplitter(headers_to_split_on=[("h2", "header2")])
 
-def split_html_on_h2(html, min_chunk_size=20, max_chunk_size=1000):
+def split_html_on_h2(html, min_chunk_size=20, max_chunk_size=380):
     """
     Splits an HTML document into chunks based on H2 headers.
 
@@ -141,7 +153,13 @@ def split_html_on_h2(html, min_chunk_size=20, max_chunk_size=1000):
 
 #lets test this method
 html = spark.table(f"{catalog_name}.{schema_name}.databricks_documentation_raw").limit(1).collect()[0]['text']
-split_html_on_h2(html)
+split_html_on_h2(html)  # max chunk size for this model appears to be 512
+
+# COMMAND ----------
+
+split_html_on_h2(html, max_chunk_size=380)  # https://huggingface.co/sentence-transformers/all-mpnet-base-v2: By default, input text longer than 384 word pieces is truncated.
+
+
 
 # COMMAND ----------
 
@@ -163,6 +181,10 @@ def parse_and_split(docs: pd.Series) -> pd.Series:
 # COMMAND ----------
 
 display(spark.table(f"{catalog_name}.{schema_name}.databricks_documentation"))
+
+# COMMAND ----------
+
+display(spark.sql(f"select count(1) from {catalog_name}.{schema_name}.databricks_documentation"))
 
 # COMMAND ----------
 
@@ -200,7 +222,7 @@ from langchain.document_loaders import PySparkDataFrameLoader
 
 #For first time turn this False
 USE_CACHE=False
-persist_directory="/tmp/chroma"
+persist_directory="/tmp/nishant/langchain_poc/chroma"
 
 vector_db=None
 if USE_CACHE:
@@ -212,6 +234,22 @@ else:
   vector_db = Chroma.from_documents(collection_name="databricks_documents", documents=split_docs, embedding=hf_embed, persist_directory=persist_directory)
   vector_db.similarity_search("spark") 
   vector_db.persist()
+
+# COMMAND ----------
+
+# MAGIC %fs ls file:/tmp/nishant/langchain_poc/chroma
+
+# COMMAND ----------
+
+dbutils.fs.cp('file:/tmp/nishant/langchain_poc/chroma/', 'dbfs:/Users/nishant.deshpande@databricks.com/genai/langchain/chroma/', recurse=True)
+
+# COMMAND ----------
+
+# MAGIC %fs ls /Users/nishant.deshpande@databricks.com/genai/langchain/chroma/
+
+# COMMAND ----------
+
+# MAGIC %fs ls dbfs:/Users/nishant.deshpande@databricks.com/
 
 # COMMAND ----------
 
@@ -275,5 +313,32 @@ qa_chain = build_qa_chain(model_name="mosaicml/mpt-7b-chat", prompt_template=pro
 # COMMAND ----------
 
 question="why should I use Delta LIve Tables for ETL?"
-result = qa_chain({"input_documents": vector_db.similarity_search(query=question, k=2), "question": question})
-format_and_display_chat_response(question, result)
+input_documents = vector_db.similarity_search(query=question, k=2)
+print(input_documents)
+
+# COMMAND ----------
+
+d = input_documents[0]
+
+# COMMAND ----------
+
+type(d)
+
+# COMMAND ----------
+
+for (k,v) in d.dict().items():
+  print(f"{k}: {v}")
+
+# COMMAND ----------
+
+result = qa_chain({"input_documents": input_documents, "question": question})
+print(type(result))
+
+# COMMAND ----------
+
+for (k,v) in result.items():
+  print(f"[[{k}]]: {v}")
+
+# COMMAND ----------
+
+
